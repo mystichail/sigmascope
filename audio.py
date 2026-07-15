@@ -155,6 +155,43 @@ class AudioEngine:
             return padded
         return chunk.copy()
 
+    def get_stereo_chunk(self, size: int = 2048):
+        """Return (L, R) float32 arrays of `size` samples.
+
+        Uses the actual L/R channels if the file is stereo,
+        otherwise synthesises a stereo pair from mono using a
+        quarter-cycle delay (makes Lissajous / Polar readable).
+        """
+        if self._data is None or self._frame == 0:
+            z = np.zeros(size, dtype=np.float32)
+            return z, z.copy()
+
+        end  = self._frame
+        start = max(0, end - size)
+
+        if self._channels >= 2:
+            raw_l = self._data[start:end, 0]
+            raw_r = self._data[start:end, 1]
+        else:
+            raw_l = self._data[start:end, 0] if self._data.ndim > 1 else self._data[start:end]
+            raw_r = raw_l  # will synthesise below
+
+        def _pad(arr):
+            if len(arr) < size:
+                p = np.zeros(size, dtype=np.float32)
+                p[size - len(arr):] = arr
+                return p
+            return arr.copy().astype(np.float32)
+
+        L = _pad(raw_l)
+        if self._channels >= 2:
+            R = _pad(raw_r)
+        else:
+            # Quarter-period delay gives a circular Lissajous for a sine wave
+            delay = size // 4
+            R = np.roll(L, delay)
+        return L, R
+
     # ── Internal ────────────────────────────────────────────────
 
     def _audio_callback(self, outdata, frames, time_info, status):

@@ -78,7 +78,7 @@ class DrawOverlay(QWidget):
 STYLESHEET = """
 /* ── Base ── */
 QMainWindow, QWidget#centralWidget { background-color: #f4f4f0; }
-QFrame#panelTop, QFrame#panelLeft, QFrame#panelRight, QFrame#panelBottom {
+QFrame#panelTop, QFrame#panelSeek, QFrame#panelControls {
     background-color: transparent;
     border: 2px solid #2b2b2b;
     border-radius: 6px;
@@ -86,43 +86,43 @@ QFrame#panelTop, QFrame#panelLeft, QFrame#panelRight, QFrame#panelBottom {
 /* ── Buttons ── */
 QPushButton {
     background-color: #ffffff;
-    color: #2b2b2b; 
-    border: 2px solid #2b2b2b; 
+    color: #2b2b2b;
+    border: 2px solid #2b2b2b;
     border-radius: 4px;
-    padding: 6px 16px; 
-    font-size: 13px; 
+    padding: 6px 16px;
+    font-size: 13px;
     font-weight: bold;
-    font-family: 'Jokerman', 'Snap ITC', 'Comic Sans MS', cursive; 
+    font-family: 'Jokerman', 'Snap ITC', 'Comic Sans MS', cursive;
     text-transform: uppercase;
 }
 QPushButton:hover { background-color: #e8e8e4; }
 QPushButton:pressed { background-color: #dcdccf; color: #ff6b6b; border-color: #ff6b6b; }
-QPushButton#btnPlay { 
-    background-color: #ffffff; 
-    border: 3px solid #2b2b2b; 
-    padding: 6px 24px; 
+QPushButton#btnPlay {
+    background-color: #ffffff;
+    border: 3px solid #2b2b2b;
+    padding: 6px 24px;
     font-size: 14px;
 }
 QPushButton#btnPlay:hover { background-color: #e8e8e4; }
 QPushButton#btnPlay:pressed { background-color: #dcdccf; color: #4ecdc4; border-color: #4ecdc4; }
 /* ── Seek bar ── */
 QSlider#seekBar::groove:horizontal { height: 2px; background: #2b2b2b; }
-QSlider#seekBar::handle:horizontal { 
-    width: 14px; height: 14px; 
-    background: #ffffff; 
-    border-radius: 7px; 
-    margin: -6px 0; 
-    border: 2px solid #2b2b2b; 
+QSlider#seekBar::handle:horizontal {
+    width: 14px; height: 14px;
+    background: #ffffff;
+    border-radius: 7px;
+    margin: -6px 0;
+    border: 2px solid #2b2b2b;
 }
 QSlider#seekBar::handle:horizontal:hover { background: #ff6b6b; }
 QSlider#seekBar::sub-page:horizontal { background: #2b2b2b; }
-/* ── Volume & Param sliders ── */
+/* ── Param sliders ── */
 QSlider::groove:horizontal { height: 2px; background: #2b2b2b; }
-QSlider::handle:horizontal { 
-    width: 12px; height: 16px; 
-    background: #ffffff; 
-    border: 2px solid #2b2b2b; 
-    margin: -7px 0; 
+QSlider::handle:horizontal {
+    width: 12px; height: 16px;
+    background: #ffffff;
+    border: 2px solid #2b2b2b;
+    margin: -7px 0;
     border-radius: 3px;
 }
 QSlider::handle:horizontal:hover { background: #4ecdc4; }
@@ -130,51 +130,51 @@ QSlider::sub-page:horizontal { background: #2b2b2b; }
 /* ── Combo box ── */
 QComboBox {
     background-color: #ffffff;
-    color: #2b2b2b; 
-    border: 2px solid #2b2b2b; 
-    border-radius: 4px; 
+    color: #2b2b2b;
+    border: 2px solid #2b2b2b;
+    border-radius: 4px;
     padding: 4px 12px;
-    font-size: 12px; 
+    font-size: 12px;
     font-weight: bold;
     font-family: 'Jokerman', 'Snap ITC', 'Comic Sans MS', cursive;
     text-transform: uppercase;
 }
 QComboBox:hover { background-color: #e8e8e4; }
 QComboBox::drop-down { border: none; width: 24px; }
-QComboBox::down-arrow { 
-    border-left: 5px solid transparent; 
-    border-right: 5px solid transparent; 
-    border-top: 5px solid #2b2b2b; 
-    margin-right: 8px; 
+QComboBox::down-arrow {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #2b2b2b;
+    margin-right: 8px;
 }
-QComboBox QAbstractItemView { 
-    background-color: #ffffff; 
-    color: #2b2b2b; 
-    selection-background-color: #e8e8e4; 
-    selection-color: #ff6b6b; 
-    border: 2px solid #2b2b2b; 
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    color: #2b2b2b;
+    selection-background-color: #e8e8e4;
+    selection-color: #ff6b6b;
+    border: 2px solid #2b2b2b;
     font-family: 'Jokerman', 'Snap ITC', 'Comic Sans MS', cursive;
     font-weight: bold;
 }
 /* ── Labels ── */
-QLabel { 
-    color: #2b2b2b; 
-    font-size: 13px; 
-    font-family: 'Jokerman', 'Snap ITC', 'Comic Sans MS', cursive; 
+QLabel {
+    color: #2b2b2b;
+    font-size: 13px;
+    font-family: 'Jokerman', 'Snap ITC', 'Comic Sans MS', cursive;
     font-weight: bold;
-    text-transform: uppercase; 
+    text-transform: uppercase;
 }
-QLabel#lblTitle { 
-    color: #ff6b6b; 
-    font-size: 18px; 
-    font-weight: 900; 
-    letter-spacing: 2px; 
+QLabel#lblTitle {
+    color: #ff6b6b;
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 2px;
     text-shadow: 2px 2px #2b2b2b;
 }
 QLabel#lblFile { color: #555555; font-size: 11px; }
 QLabel#lblTime { color: #2b2b2b; font-size: 13px; }
-QLabel#lblFps { color: #777777; font-size: 11px; }
-QLabel#lblVol { color: #2b2b2b; min-width: 32px; font-size: 12px;}
+QLabel#lblFps  { color: #777777; font-size: 11px; }
+QLabel#lblVol  { color: #2b2b2b; min-width: 32px; font-size: 12px; }
 """
 
 def _fmt(seconds: float) -> str:
@@ -223,7 +223,8 @@ class MainWindow(QMainWindow):
         top.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
         self.combo = QComboBox()
-        self.combo.addItems(["Wave", "Circle", "Equalizer", "Spectrogram", "Custom Shape", "All Together"])
+        self.combo.addItems(["Wave", "Circle", "Equalizer", "Spectrogram",
+                             "Custom Shape", "Lissajous", "Polar Level", "All Together"])
         top.addWidget(QLabel("MODE")); top.addWidget(self.combo)
         
         sep = QLabel("│"); sep.setFixedWidth(12); sep.setAlignment(Qt.AlignCenter); top.addWidget(sep)
@@ -297,8 +298,12 @@ class MainWindow(QMainWindow):
         self.sl_decay = QSlider(Qt.Horizontal); self.sl_decay.setRange(1, 100); self.sl_decay.setValue(85); row2.addWidget(self.sl_decay)
         row2.addWidget(QLabel("IMG OPACITY"))
         self.sl_imgop = QSlider(Qt.Horizontal); self.sl_imgop.setRange(0, 100); self.sl_imgop.setValue(30); row2.addWidget(self.sl_imgop)
+        row2.addWidget(QLabel("SPEC COLOR"))
+        self.combo_spec = QComboBox()
+        self.combo_spec.addItems(["Inferno", "Viridis", "Plasma", "Magma", "Ocean", "Sunset"])
+        row2.addWidget(self.combo_spec)
         param.addLayout(row2)
-        
+
         root.addWidget(param_panel)
 
     def resizeEvent(self, e):
@@ -323,6 +328,7 @@ class MainWindow(QMainWindow):
         self.sl_color.valueChanged.connect(lambda v: setattr(self.visualizer, 'p_color', v))
         self.sl_decay.valueChanged.connect(lambda v: setattr(self.visualizer, 'p_decay', v / 100.0))
         self.sl_imgop.valueChanged.connect(lambda v: self.visualizer.set_bg_opacity(v / 100.0))
+        self.combo_spec.currentTextChanged.connect(lambda t: self.visualizer.set_spec_colormap(t))
 
     def _timers(self):
         self._vt = QTimer(self); self._vt.timeout.connect(self._vis_tick); self._vt.start(16)
@@ -336,6 +342,10 @@ class MainWindow(QMainWindow):
             dt = self._ftimes[-1] - self._ftimes[0]
             self._fps = (len(self._ftimes) - 1) / dt if dt > 0 else 0
         chunk = self.engine.get_current_chunk(2048)
+        # Push stereo data so Ozone modes have L/R channels
+        L, R = self.engine.get_stereo_chunk(2048)
+        self.visualizer._stereo_L = L
+        self.visualizer._stereo_R = R
         self.visualizer.update(chunk)
 
     def _ui_tick(self):
