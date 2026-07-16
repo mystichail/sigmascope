@@ -6,8 +6,9 @@ Added: blend modes for background image.
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtGui import QImage, QPainter
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter, QPolygonF
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtWidgets import QGraphicsPolygonItem
 from enum import Enum
 
 
@@ -165,27 +166,31 @@ class Visualizer:
         self.widget.addItem(self._grid_pts)
 
         # ── CUSTOM SHAPE ──
-        self._custom_base = None
-        self._custom_normals = None
+        t_cust = np.linspace(0, 2*np.pi, 256, endpoint=False)
+        r_cust = 2.5 + 0.5 * np.sin(5 * t_cust)
+        self._custom_base = np.column_stack([r_cust * np.cos(t_cust), r_cust * np.sin(t_cust)])
+        dx_c = np.gradient(self._custom_base[:, 0])
+        dy_c = np.gradient(self._custom_base[:, 1])
+        len_c = np.sqrt(dx_c**2 + dy_c**2) + 1e-9
+        self._custom_normals = np.column_stack([-dy_c / len_c, dx_c / len_c])
         self._custom_curve = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 220), width=1.5))
         self._custom_chords = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 30), width=1.0))
 
         # ── OZONE LISSAJOUS (scatter-based vectorscope) ──
         self._liss_scatter = pg.ScatterPlotItem(size=2, pxMode=True,
                                                  pen=pg.mkPen(None),
-                                                 brush=pg.mkBrush(78, 205, 196, 200))
+                                                 brush=pg.mkBrush(15, 15, 15, 220))
         self.widget.addItem(self._liss_scatter)
         self._liss_scatter_fade = pg.ScatterPlotItem(size=2, pxMode=True,
                                                       pen=pg.mkPen(None),
-                                                      brush=pg.mkBrush(78, 205, 196, 80))
+                                                      brush=pg.mkBrush(15, 15, 15, 85))
         self.widget.addItem(self._liss_scatter_fade)
         # Reference frame: semicircle + guides
-        self._liss_arc = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
-        self._liss_lr_line = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
-        self._liss_guide1 = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 25), width=0.8))
-        self._liss_guide2 = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 25), width=0.8))
+        self._liss_arc = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 80), width=1.0))
+        self._liss_lr_line = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 80), width=1.0))
+        self._liss_guide1 = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 45), width=0.8))
+        self._liss_guide2 = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 45), width=0.8))
         self._liss_hist = []  # rolling buffer of (x, y) arrays
-        # Keep old trail items for compatibility but they won't be used
         self._liss_trails = []
         self._liss_diamond = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0))
         self._liss_crosshair_h = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 40), width=0.8))
@@ -194,11 +199,11 @@ class Visualizer:
         # ── POLAR SAMPLE (scatter-based like reference image) ──
         self._polar_sample_scatter = pg.ScatterPlotItem(size=2, pxMode=True,
                                                          pen=pg.mkPen(None),
-                                                         brush=pg.mkBrush(78, 205, 196, 160))
+                                                         brush=pg.mkBrush(15, 15, 15, 220))
         self.widget.addItem(self._polar_sample_scatter)
         self._polar_sample_fade = pg.ScatterPlotItem(size=2, pxMode=True,
                                                       pen=pg.mkPen(None),
-                                                      brush=pg.mkBrush(78, 205, 196, 40))
+                                                      brush=pg.mkBrush(15, 15, 15, 85))
         self.widget.addItem(self._polar_sample_fade)
         self._polar_sample_arc = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
         self._polar_sample_lr = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
@@ -208,17 +213,17 @@ class Visualizer:
 
         # ── POLAR LEVEL ──
         # arc reference lines
-        self._polar_arc = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
-        self._polar_lr_line = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
-        self._polar_guide_arcs = [self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 25), width=0.8))
-                                   for _ in range(2)]
-        # filled spikes
-        self._polar_fill = pg.PlotCurveItem(
-            pen=pg.mkPen(color=(78, 205, 196, 200), width=1.5),
-            fillLevel=0, brush=pg.mkBrush(78, 205, 196, 80)
-        )
+        self._polar_arc = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 80), width=1.0))
+        self._polar_lr_line = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 80), width=1.0))
+        self._polar_guide_arcs = [self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 45), width=0.8, style=Qt.DashLine))
+                                   for _ in range(5)]
+        # filled spikes (using QGraphicsPolygonItem for true 2D radial wedge filling without fillLevel glitches)
+        self._polar_fill = QGraphicsPolygonItem()
+        self._polar_fill.setBrush(pg.mkBrush(15, 15, 15, 110))
+        self._polar_fill.setPen(pg.mkPen(None))
         self.widget.addItem(self._polar_fill)
-        self._polar_outline = self.widget.plot([], [], pen=pg.mkPen(color=(140, 230, 225, 255), width=2.0))
+        self._polar_inner = self.widget.plot([], [], pen=pg.mkPen(color=(30, 30, 30, 150), width=1.2, style=Qt.DashLine))
+        self._polar_outline = self.widget.plot([], [], pen=pg.mkPen(color=(10, 10, 10, 250), width=2.2))
 
         # ── ALL mode: sketchbook quadrant borders + labels ──
         # 4 rectangle borders (each as a closed polygon)
@@ -238,18 +243,22 @@ class Visualizer:
             self.widget.addItem(ti)
             self._all_labels.append(ti)
         self._all_liss_scatter = pg.ScatterPlotItem(size=1.5, pxMode=True, pen=pg.mkPen(None),
-                                                     brush=pg.mkBrush(78, 205, 196, 140))
+                                                     brush=pg.mkBrush(15, 15, 15, 180))
         self.widget.addItem(self._all_liss_scatter)
-        self._all_polar_fill = pg.PlotCurveItem(pen=pg.mkPen(color=(78, 205, 196, 160), width=1.0),
-                                                 fillLevel=0, brush=pg.mkBrush(78, 205, 196, 50))
+        self._all_polar_fill = QGraphicsPolygonItem()
+        self._all_polar_fill.setBrush(pg.mkBrush(15, 15, 15, 75))
+        self._all_polar_fill.setPen(pg.mkPen(None))
         self.widget.addItem(self._all_polar_fill)
-        self._all_polar_outline = self.widget.plot([], [], pen=pg.mkPen(color=(140, 230, 225, 200), width=1.5))
+        self._all_polar_outline = self.widget.plot([], [], pen=pg.mkPen(color=(10, 10, 10, 230), width=1.5))
+        self._all_polar_sample_scatter = pg.ScatterPlotItem(size=1.5, pxMode=True, pen=pg.mkPen(None),
+                                                             brush=pg.mkBrush(15, 15, 15, 160))
+        self.widget.addItem(self._all_polar_sample_scatter)
         self._all_polar_arc = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 40), width=0.8))
         # Mini spectrogram for all-together
         self._all_spec_img = pg.ImageItem()
         self.widget.addItem(self._all_spec_img)
         self._all_spec_history = np.zeros((100, 64), dtype=np.float32)
-        self._apply_spec_colormap_item(self._all_spec_img, 'Inferno')
+        self._apply_spec_colormap_item(self._all_spec_img, 'Viridis')
 
         self._hide_all()
 
@@ -258,6 +267,13 @@ class Visualizer:
 
     # ─── Spectrogram colormaps ───────────────────────────────────────
     _SPEC_CMAPS = {
+        'Viridis': [
+            [0,   [68,  1,   84,  255]],
+            [0.25,[59,  82,  139, 255]],
+            [0.5, [33,  144, 141, 255]],
+            [0.75,[93,  201, 98,  255]],
+            [1.0, [253, 231, 37,  255]],
+        ],
         'Inferno': [
             [0,   [10,  0,   20,  255]],
             [0.25,[120, 0,   80,  255]],
@@ -275,7 +291,7 @@ class Visualizer:
     }
 
     def _apply_spec_colormap(self, name: str):
-        stops = self._SPEC_CMAPS.get(name, self._SPEC_CMAPS['Inferno'])
+        stops = self._SPEC_CMAPS.get(name, self._SPEC_CMAPS['Viridis'])
         pos   = np.array([s[0] for s in stops])
         color = np.array([s[1] for s in stops], dtype=np.ubyte)
         cmap  = pg.ColorMap(pos, color)
@@ -283,7 +299,7 @@ class Visualizer:
 
     def _apply_spec_colormap_item(self, img_item, name: str):
         """Apply a spectrogram colormap to any ImageItem."""
-        stops = self._SPEC_CMAPS.get(name, self._SPEC_CMAPS['Inferno'])
+        stops = self._SPEC_CMAPS.get(name, self._SPEC_CMAPS['Viridis'])
         pos   = np.array([s[0] for s in stops])
         color = np.array([s[1] for s in stops], dtype=np.ubyte)
         cmap  = pg.ColorMap(pos, color)
@@ -516,7 +532,12 @@ class Visualizer:
         b_x = self._boil_x[:len(v)] * scale
         b_y = self._boil_y[:len(v)] * scale
         
-        base_y = v * amp + oy
+        if is_all:
+            max_y_span = scale * 1.1
+            base_y = np.clip(v * amp, -max_y_span, max_y_span) + oy
+        else:
+            base_y = v * amp + oy
+            
         final_x = x + b_x
         final_y = base_y + b_y
         
@@ -731,8 +752,8 @@ class Visualizer:
         if not is_all: self._hide_all_but('spec')
         bars, _ = self._get_fft(chunk, self._spec_y_res)
         
-        # Normalize for intensity (sensitivity controls brightness)
-        bars = bars * self.p_sens * 1.5
+        # Boost dynamic range so normal peaks reach bright yellow (255)
+        bars = bars * self.p_sens * 2.8
         bars = np.clip(bars, 0, 255)
         
         scroll = max(1, int(1 * self.p_speed))
@@ -769,6 +790,10 @@ class Visualizer:
         L, R = L[:n], R[:n]
 
         # Mid-Side transform
+        # Decimate sample density for 60 FPS performance
+        step = max(1, len(L) // 384)
+        L, R = L[::step], R[::step]
+        
         sq2 = np.sqrt(2.0)
         x_ms = (R - L) / sq2
         y_ms = (L + R) / sq2
@@ -777,9 +802,9 @@ class Visualizer:
         x_ms = np.clip(x_ms * self.p_sens, -clip, clip)
         y_ms = np.clip(y_ms * self.p_sens, -clip, clip)
 
-        # Rolling history for fading dots
+        # Rolling history for fading dots (capped for high FPS)
         self._liss_hist.append((x_ms.copy(), y_ms.copy()))
-        keep = max(2, min(6, int(self.p_decay * 6)))
+        keep = max(1, min(3, int(self.p_decay * 3)))
         while len(self._liss_hist) > keep:
             self._liss_hist.pop(0)
 
@@ -848,29 +873,41 @@ class Visualizer:
         max_r = 3.0 * (1.0 + self._beat_e * 0.2)
         energy = np.clip(energy * 2.5 * self.p_sens, 0, max_r)
 
-        # Build polygon: angle 0→R(bottom-right), pi→L(bottom-left)
+        # Rotate sketch boil slowly for organic pencil feel
+        self._boil_polar = np.roll(self._boil_polar, 3)
+        boil = self._boil_polar[:n_bins] * max_r * 0.035
+        energy_outline = np.clip(energy + boil, 0, max_r)
+        energy_inner = energy * 0.65
+
+        # Build 2D radial waveform polygon closing exactly through origin (0, 0)
         theta = np.linspace(0, np.pi, n_bins)
-        # cos(0)=1(R), cos(pi)=-1(L), sin(pi/2)=1(Mono)
         px = energy * np.cos(theta)
         py = energy * np.sin(theta)
-
-        # Close through origin
         px_c = np.concatenate([[0], px, [0]])
         py_c = np.concatenate([[0], py, [0]])
-        self._polar_fill.setData(px_c, py_c)
-        self._polar_fill.setVisible(True)
-        self._polar_outline.setData(px, py)
-        self._polar_outline.setVisible(True)
 
-        # Reference arcs and diagonal guide lines
+        px_out = energy_outline * np.cos(theta)
+        py_out = energy_outline * np.sin(theta)
+        px_out_c = np.concatenate([[0], px_out, [0]])
+        py_out_c = np.concatenate([[0], py_out, [0]])
+
+        # Plot true 2D polygon fill and closed outline exactly like Vectorscope reference
+        pts = [QPointF(float(x), float(y)) for x, y in zip(px_c, py_c)]
+        self._polar_fill.setPolygon(QPolygonF(pts))
+        self._polar_fill.setVisible(True)
+        self._polar_outline.setData(px_out_c, py_out_c)
+        self._polar_outline.setVisible(True)
+        if hasattr(self, '_polar_inner'): self._polar_inner.setVisible(False)
+
+        # Reference arcs and precision radial guide lines
         t_arc = np.linspace(0, np.pi, 200)
         self._polar_arc.setData(max_r * np.cos(t_arc), max_r * np.sin(t_arc))
         self._polar_arc.setVisible(True)
         self._polar_lr_line.setData([-max_r, max_r], [0, 0])
         self._polar_lr_line.setVisible(True)
         
-        # 2 Diagonal lines separating L/Mid and R/Mid
-        angles = [np.pi/4, 3*np.pi/4]
+        # Radial rays at 30, 60, 90 (Mono), 120, 150 degrees
+        angles = [np.pi/6, np.pi/3, np.pi/2, 2*np.pi/3, 5*np.pi/6]
         for i, guide in enumerate(self._polar_guide_arcs):
             if i < len(angles):
                 gx = [0, max_r * np.cos(angles[i])]
@@ -893,6 +930,10 @@ class Visualizer:
         n = min(len(L), len(R))
         L, R = L[:n], R[:n]
 
+        # Decimate sample density for 60 FPS performance
+        step = max(1, len(L) // 384)
+        L, R = L[::step], R[::step]
+
         eps = 1e-9
         mag = np.sqrt(L**2 + R**2) * self.p_sens * 2.5
         ang = np.arctan2(np.abs(L) + eps, np.abs(R) + eps) * 2.0
@@ -903,9 +944,9 @@ class Visualizer:
         px = mag * np.cos(ang)
         py = mag * np.sin(ang)
 
-        # Rolling history for fading
+        # Rolling history for fading (capped for high FPS)
         self._polar_sample_hist.append((px.copy(), py.copy()))
-        keep = max(2, min(6, int(self.p_decay * 6)))
+        keep = max(1, min(3, int(self.p_decay * 3)))
         while len(self._polar_sample_hist) > keep:
             self._polar_sample_hist.pop(0)
 
@@ -960,6 +1001,9 @@ class Visualizer:
         if not is_all: self._hide_all_but('custom')
         if self._custom_base is None:
             return
+        if is_all:
+            self._custom_curve.setVisible(True)
+            self._custom_chords.setVisible(True)
             
         step = max(1, len(d) // 256)
         v = d[::step][:256]
@@ -1063,7 +1107,7 @@ class Visualizer:
 
         # Mini spectrogram (top-right cell)
         bars_mini, _ = self._get_fft(chunk, 64)
-        bars_mini = np.clip(bars_mini * self.p_sens * 1.5, 0, 255)
+        bars_mini = np.clip(bars_mini * self.p_sens * 2.8, 0, 255)
         self._all_spec_history = np.roll(self._all_spec_history, -1, axis=0)
         self._all_spec_history[-1] = bars_mini
         spec_img = np.clip(self._all_spec_history, 0, 255).astype(np.ubyte)
@@ -1091,7 +1135,7 @@ class Visualizer:
         self._all_liss_scatter.setData(lx, ly)
         self._all_liss_scatter.setVisible(True)
 
-        # Mini Polar fill (bottom-center)
+        # Mini Polar fill & sample in bottom-center cell
         eps = 1e-9
         mag = np.sqrt(L_s**2 + R_s**2)
         ang_p = np.arctan2(np.abs(L_s) + eps, np.abs(R_s) + eps) * 2.0
@@ -1109,10 +1153,24 @@ class Visualizer:
         ppy = energy * np.sin(theta) + cy_bot
         ppx_c = np.concatenate([[cx[1]], ppx, [cx[1]]])
         ppy_c = np.concatenate([[cy_bot], ppy, [cy_bot]])
-        self._all_polar_fill.setData(ppx_c, ppy_c)
+        
+        pts_all = [QPointF(float(x), float(y)) for x, y in zip(ppx_c, ppy_c)]
+        self._all_polar_fill.setPolygon(QPolygonF(pts_all))
         self._all_polar_fill.setVisible(True)
-        self._all_polar_outline.setData(ppx, ppy)
+        self._all_polar_outline.setData(ppx_c, ppy_c)
         self._all_polar_outline.setVisible(True)
+        
+        # Add polar sample scatter inside mini polar cell
+        step_ps = max(1, len(L_s) // 128)
+        L_ps, R_ps = L_s[::step_ps], R_s[::step_ps]
+        mag_ps = np.sqrt(L_ps**2 + R_ps**2) * self.p_sens * 1.5
+        ang_ps = np.arctan2(np.abs(L_ps) + eps, np.abs(R_ps) + eps) * 2.0
+        mag_ps = np.clip(mag_ps, 0, polar_sc)
+        px_ps = mag_ps * np.cos(ang_ps) + cx[1]
+        py_ps = mag_ps * np.sin(ang_ps) + cy_bot
+        self._all_polar_sample_scatter.setData(px_ps, py_ps)
+        self._all_polar_sample_scatter.setVisible(True)
+        
         t_arc = np.linspace(0, np.pi, 100)
         self._all_polar_arc.setData(polar_sc * np.cos(t_arc) + cx[1], polar_sc * np.sin(t_arc) + cy_bot)
         self._all_polar_arc.setVisible(True)
@@ -1169,8 +1227,8 @@ class Visualizer:
         for tok in self._eq_tokens: tok.setVisible(mode_str == 'eq' or is_all)
 
         self._spec_img.setVisible(mode_str == 'spec')
-        self._custom_curve.setVisible(mode_str == 'custom')
-        self._custom_chords.setVisible(mode_str == 'custom')
+        self._custom_curve.setVisible(mode_str == 'custom' or (is_all and self._custom_base is not None))
+        self._custom_chords.setVisible(mode_str == 'custom' or (is_all and self._custom_base is not None))
 
         # Lissajous scatter + diamond frame
         is_liss = (mode_str == 'lissajous')
@@ -1197,6 +1255,7 @@ class Visualizer:
         is_polar = (mode_str == 'polar_level')
         self._polar_fill.setVisible(is_polar)
         self._polar_outline.setVisible(is_polar)
+        if hasattr(self, '_polar_inner'): self._polar_inner.setVisible(False)
         self._polar_arc.setVisible(is_polar)
         self._polar_lr_line.setVisible(is_polar)
         for a in self._polar_guide_arcs: a.setVisible(is_polar)
@@ -1211,6 +1270,7 @@ class Visualizer:
         if hasattr(self, '_all_liss_scatter'): self._all_liss_scatter.setVisible(is_all)
         if hasattr(self, '_all_polar_fill'): self._all_polar_fill.setVisible(is_all)
         if hasattr(self, '_all_polar_outline'): self._all_polar_outline.setVisible(is_all)
+        if hasattr(self, '_all_polar_sample_scatter'): self._all_polar_sample_scatter.setVisible(is_all)
         if hasattr(self, '_all_polar_arc'): self._all_polar_arc.setVisible(is_all)
         if hasattr(self, '_all_spec_img'): self._all_spec_img.setVisible(is_all)
 

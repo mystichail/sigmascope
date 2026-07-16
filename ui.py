@@ -195,10 +195,13 @@ class MainWindow(QMainWindow):
         self._ftimes: list[float] = []
         self._fps = 0.0
         self._seeking = False
+        self._mode_params: dict[str, dict[str, any]] = {}
+        self._updating_sliders = False
 
         self._build()
         self._wire()
         self._timers()
+        self._on_mode_changed(self.combo.currentText())
 
     def _build(self):
         cw = QWidget(); cw.setObjectName("centralWidget")
@@ -292,14 +295,16 @@ class MainWindow(QMainWindow):
         param.addLayout(row1)
         
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("COLOR (HUE)"))
+        self.lbl_color = QLabel("COLOR (HUE)")
+        row2.addWidget(self.lbl_color)
         self.sl_color = QSlider(Qt.Horizontal); self.sl_color.setRange(-10, 360); self.sl_color.setValue(-10); row2.addWidget(self.sl_color)
-        row2.addWidget(QLabel("IMG OPACITY"))
+        self.lbl_imgop = QLabel("IMG OPACITY")
+        row2.addWidget(self.lbl_imgop)
         self.sl_imgop = QSlider(Qt.Horizontal); self.sl_imgop.setRange(0, 100); self.sl_imgop.setValue(30); row2.addWidget(self.sl_imgop)
         self.lbl_spec_color = QLabel("SPEC COLOR")
         row2.addWidget(self.lbl_spec_color)
         self.combo_spec = QComboBox()
-        self.combo_spec.addItems(["Inferno", "Magma"])
+        self.combo_spec.addItems(["Viridis", "Inferno", "Magma"])
         row2.addWidget(self.combo_spec)
         param.addLayout(row2)
 
@@ -321,15 +326,58 @@ class MainWindow(QMainWindow):
         self.seek.sliderReleased.connect(self._seek_done)
         self.combo.currentTextChanged.connect(self._on_mode_changed)
         
-        self.sl_sens.valueChanged.connect(lambda v: setattr(self.visualizer, 'p_sens', v / 100.0))
-        self.sl_speed.valueChanged.connect(lambda v: setattr(self.visualizer, 'p_speed', v / 100.0))
-        self.sl_comp.valueChanged.connect(lambda v: setattr(self.visualizer, 'p_comp', v / 100.0))
-        self.sl_color.valueChanged.connect(lambda v: setattr(self.visualizer, 'p_color', v))
-        self.sl_imgop.valueChanged.connect(lambda v: self.visualizer.set_bg_opacity(v / 100.0))
-        self.combo_spec.currentTextChanged.connect(lambda t: self.visualizer.set_spec_colormap(t))
+        self.sl_sens.valueChanged.connect(lambda v: self._on_param_changed('sens', v))
+        self.sl_speed.valueChanged.connect(lambda v: self._on_param_changed('speed', v))
+        self.sl_comp.valueChanged.connect(lambda v: self._on_param_changed('comp', v))
+        self.sl_color.valueChanged.connect(lambda v: self._on_param_changed('color', v))
+        self.sl_imgop.valueChanged.connect(lambda v: self._on_param_changed('imgop', v))
+        self.combo_spec.currentTextChanged.connect(lambda t: self._on_param_changed('spec', t))
+
+    def _on_param_changed(self, param_key: str, val):
+        mode = self.combo.currentText()
+        if mode not in self._mode_params:
+            self._mode_params[mode] = {'sens': 100, 'speed': 100, 'comp': 100, 'color': -10, 'imgop': 30, 'spec': 'Viridis'}
+        if not self._updating_sliders:
+            self._mode_params[mode][param_key] = val
+            if param_key == 'sens': setattr(self.visualizer, 'p_sens', val / 100.0)
+            elif param_key == 'speed': setattr(self.visualizer, 'p_speed', val / 100.0)
+            elif param_key == 'comp': setattr(self.visualizer, 'p_comp', val / 100.0)
+            elif param_key == 'color': setattr(self.visualizer, 'p_color', val)
+            elif param_key == 'imgop': self.visualizer.set_bg_opacity(val / 100.0)
+            elif param_key == 'spec': self.visualizer.set_spec_colormap(val)
 
     def _on_mode_changed(self, text):
+        if text not in self._mode_params:
+            self._mode_params[text] = {'sens': 100, 'speed': 100, 'comp': 100, 'color': -10, 'imgop': 30, 'spec': 'Viridis'}
+        params = self._mode_params[text]
+        self._updating_sliders = True
+        self.sl_sens.setValue(params['sens'])
+        self.sl_speed.setValue(params['speed'])
+        self.sl_comp.setValue(params['comp'])
+        self.sl_color.setValue(params['color'])
+        self.sl_imgop.setValue(params['imgop'])
+        self.combo_spec.setCurrentText(params['spec'])
+        self._updating_sliders = False
+        
+        self.visualizer.p_sens = params['sens'] / 100.0
+        self.visualizer.p_speed = params['speed'] / 100.0
+        self.visualizer.p_comp = params['comp'] / 100.0
+        self.visualizer.p_color = params['color']
+        self.visualizer.set_bg_opacity(params['imgop'] / 100.0)
+        self.visualizer.set_spec_colormap(params['spec'])
         self.visualizer.set_mode(text)
+
+        # Show/hide controls where they are applicable
+        uses_hue = text in ('Circle', 'EQ', 'Wave', 'Geometry', 'Custom', 'Image Circle', 'All Together')
+        uses_imgop = text in ('Circle', 'EQ', 'Wave', 'Geometry', 'Custom')
+        uses_spec = text in ('Spectrogram', 'All Together')
+        
+        self.lbl_color.setVisible(uses_hue)
+        self.sl_color.setVisible(uses_hue)
+        self.lbl_imgop.setVisible(uses_imgop)
+        self.sl_imgop.setVisible(uses_imgop)
+        self.lbl_spec_color.setVisible(uses_spec)
+        self.combo_spec.setVisible(uses_spec)
 
     def _timers(self):
         self._vt = QTimer(self); self._vt.timeout.connect(self._vis_tick); self._vt.start(16)
