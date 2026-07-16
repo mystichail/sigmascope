@@ -40,6 +40,7 @@ class VisMode(Enum):
     CUSTOM_SHAPE = 7
     IMAGE_CIRCLE = 8
     LISSAJOUS = 9
+    POLAR_SAMPLE = 12
     POLAR_LEVEL = 11
     ALL_TOGETHER = 10
 
@@ -70,7 +71,7 @@ class Visualizer:
         self.p_speed = 1.0
         self.p_comp = 1.0
         self.p_color = -10
-        self.p_decay = 0.85
+        self.p_decay = 0.85  # fixed internally, no UI control
         self._last_color = -999
         self._blend_mode = "normal"  # current blend mode name
 
@@ -169,19 +170,41 @@ class Visualizer:
         self._custom_curve = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 220), width=1.5))
         self._custom_chords = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 30), width=1.0))
 
-        # ── OZONE LISSAJOUS ──
-        # 3 trail layers (oldest → most transparent) + bright current
-        self._liss_trails = []
-        for i in range(4):
-            alpha = int(220 - i * 50)
-            w = 1.5 - i * 0.3
-            self._liss_trails.append(
-                self.widget.plot([], [], pen=pg.mkPen(color=(78, 205, 196, alpha), width=max(0.5, w)))
-            )
-        self._liss_diamond = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 60), width=1.0))
-        self._liss_crosshair_h = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 40), width=0.8))
-        self._liss_crosshair_v = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 40), width=0.8))
+        # ── OZONE LISSAJOUS (scatter-based vectorscope) ──
+        self._liss_scatter = pg.ScatterPlotItem(size=2, pxMode=True,
+                                                 pen=pg.mkPen(None),
+                                                 brush=pg.mkBrush(78, 205, 196, 200))
+        self.widget.addItem(self._liss_scatter)
+        self._liss_scatter_fade = pg.ScatterPlotItem(size=2, pxMode=True,
+                                                      pen=pg.mkPen(None),
+                                                      brush=pg.mkBrush(78, 205, 196, 80))
+        self.widget.addItem(self._liss_scatter_fade)
+        # Reference frame: semicircle + guides
+        self._liss_arc = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
+        self._liss_lr_line = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
+        self._liss_guide1 = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 25), width=0.8))
+        self._liss_guide2 = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 25), width=0.8))
         self._liss_hist = []  # rolling buffer of (x, y) arrays
+        # Keep old trail items for compatibility but they won't be used
+        self._liss_trails = []
+        self._liss_diamond = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0))
+        self._liss_crosshair_h = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 40), width=0.8))
+        self._liss_crosshair_v = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 40), width=0.8))
+
+        # ── POLAR SAMPLE (scatter-based like reference image) ──
+        self._polar_sample_scatter = pg.ScatterPlotItem(size=2, pxMode=True,
+                                                         pen=pg.mkPen(None),
+                                                         brush=pg.mkBrush(78, 205, 196, 160))
+        self.widget.addItem(self._polar_sample_scatter)
+        self._polar_sample_fade = pg.ScatterPlotItem(size=2, pxMode=True,
+                                                      pen=pg.mkPen(None),
+                                                      brush=pg.mkBrush(78, 205, 196, 40))
+        self.widget.addItem(self._polar_sample_fade)
+        self._polar_sample_arc = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
+        self._polar_sample_lr = self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 50), width=1.0))
+        self._polar_sample_guides = [self.widget.plot([], [], pen=pg.mkPen(color=(180, 200, 210, 25), width=0.8))
+                                      for _ in range(2)]
+        self._polar_sample_hist = []
 
         # ── POLAR LEVEL ──
         # arc reference lines
@@ -200,23 +223,33 @@ class Visualizer:
         # ── ALL mode: sketchbook quadrant borders + labels ──
         # 4 rectangle borders (each as a closed polygon)
         self._all_borders = [self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 80),
-                                                                    width=1.5,
-                                                                    style=Qt.SolidLine))
-                             for _ in range(4)]
-        # Divider lines
-        self._all_div_v = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0,
-                                                                 style=Qt.DashLine))
-        self._all_div_h = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0,
-                                                                 style=Qt.DashLine))
-        # Section labels
+                                                                    width=1.5, style=Qt.SolidLine))
+                             for _ in range(7)]
+        self._all_div_v = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0, style=Qt.DashLine))
+        self._all_div_v2 = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0, style=Qt.DashLine))
+        self._all_div_v3 = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0, style=Qt.DashLine))
+        self._all_div_h = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 60), width=1.0, style=Qt.DashLine))
         _lbl_font = pg.QtGui.QFont('Inter', 8, pg.QtGui.QFont.Bold)
         _lbl_color = (80, 80, 80, 160)
         self._all_labels = []
-        for txt in ('CIRCLE', 'GEOMETRY', 'EQ', 'WAVE'):
+        for txt in ('CIRCLE', 'EQ', 'WAVE', 'LISSAJOUS', 'POLAR', 'SPEC', 'CUSTOM'):
             ti = pg.TextItem(text=txt, color=_lbl_color, anchor=(0, 0))
             ti.setFont(_lbl_font)
             self.widget.addItem(ti)
             self._all_labels.append(ti)
+        self._all_liss_scatter = pg.ScatterPlotItem(size=1.5, pxMode=True, pen=pg.mkPen(None),
+                                                     brush=pg.mkBrush(78, 205, 196, 140))
+        self.widget.addItem(self._all_liss_scatter)
+        self._all_polar_fill = pg.PlotCurveItem(pen=pg.mkPen(color=(78, 205, 196, 160), width=1.0),
+                                                 fillLevel=0, brush=pg.mkBrush(78, 205, 196, 50))
+        self.widget.addItem(self._all_polar_fill)
+        self._all_polar_outline = self.widget.plot([], [], pen=pg.mkPen(color=(140, 230, 225, 200), width=1.5))
+        self._all_polar_arc = self.widget.plot([], [], pen=pg.mkPen(color=(43, 43, 43, 40), width=0.8))
+        # Mini spectrogram for all-together
+        self._all_spec_img = pg.ImageItem()
+        self.widget.addItem(self._all_spec_img)
+        self._all_spec_history = np.zeros((100, 64), dtype=np.float32)
+        self._apply_spec_colormap_item(self._all_spec_img, 'Inferno')
 
         self._hide_all()
 
@@ -232,38 +265,12 @@ class Visualizer:
             [0.75,[255, 180, 20,  255]],
             [1.0, [255, 255, 200, 255]],
         ],
-        'Viridis': [
-            [0,   [68,  1,   84,  255]],
-            [0.25,[59,  82,  139, 255]],
-            [0.5, [33,  144, 141, 255]],
-            [0.75,[93,  201, 98,  255]],
-            [1.0, [253, 231, 37,  255]],
-        ],
-        'Plasma': [
-            [0,   [13,  8,   135, 255]],
-            [0.25,[126, 3,   168, 255]],
-            [0.5, [204, 71,  120, 255]],
-            [0.75,[248, 149, 64,  255]],
-            [1.0, [240, 249, 33,  255]],
-        ],
         'Magma': [
             [0,   [0,   0,   4,   255]],
             [0.25,[81,  18,  124, 255]],
             [0.5, [183, 55,  121, 255]],
             [0.75,[251, 136, 97,  255]],
             [1.0, [252, 253, 191, 255]],
-        ],
-        'Ocean': [
-            [0,   [0,   10,  30,  255]],
-            [0.33,[0,   60,  120, 255]],
-            [0.66,[0,   160, 180, 255]],
-            [1.0, [200, 240, 255, 255]],
-        ],
-        'Sunset': [
-            [0,   [20,  0,   40,  255]],
-            [0.33,[160, 0,   100, 255]],
-            [0.66,[255, 120, 0,   255]],
-            [1.0, [255, 240, 80,  255]],
         ],
     }
 
@@ -274,8 +281,18 @@ class Visualizer:
         cmap  = pg.ColorMap(pos, color)
         self._spec_img.setLookupTable(cmap.getLookupTable(nPts=256))
 
+    def _apply_spec_colormap_item(self, img_item, name: str):
+        """Apply a spectrogram colormap to any ImageItem."""
+        stops = self._SPEC_CMAPS.get(name, self._SPEC_CMAPS['Inferno'])
+        pos   = np.array([s[0] for s in stops])
+        color = np.array([s[1] for s in stops], dtype=np.ubyte)
+        cmap  = pg.ColorMap(pos, color)
+        img_item.setLookupTable(cmap.getLookupTable(nPts=256))
+
     def set_spec_colormap(self, name: str):
         self._apply_spec_colormap(name)
+        if hasattr(self, '_all_spec_img'):
+            self._apply_spec_colormap_item(self._all_spec_img, name)
 
     # ── Blend mode names mapped to Qt.CompositionMode ──
     BLEND_MODES = {
@@ -437,6 +454,7 @@ class Visualizer:
         elif m == VisMode.CUSTOM_SHAPE:   self._draw_custom(d, rms)
         elif m == VisMode.IMAGE_CIRCLE:   self._draw_img_circle(d, rms)
         elif m == VisMode.LISSAJOUS:     self._draw_lissajous_ozone(chunk)
+        elif m == VisMode.POLAR_SAMPLE:   self._draw_polar_sample(chunk)
         elif m == VisMode.POLAR_LEVEL:    self._draw_polar_level(chunk)
         elif m == VisMode.ALL_TOGETHER:   self._draw_all(d, chunk, rms)
         
@@ -709,8 +727,8 @@ class Visualizer:
             self.widget.setXRange(-1, 1, padding=0)
             self.widget.setYRange(0, 1.1, padding=0)
 
-    def _draw_spec(self, chunk):
-        self._hide_all_but('spec')
+    def _draw_spec(self, chunk, ox=0, oy=0, w=400, h=256, is_all=False):
+        if not is_all: self._hide_all_but('spec')
         bars, _ = self._get_fft(chunk, self._spec_y_res)
         
         # Normalize for intensity (sensitivity controls brightness)
@@ -721,11 +739,14 @@ class Visualizer:
         self._spec_history = np.roll(self._spec_history, -scroll, axis=0)
         self._spec_history[-scroll:] = bars
         
+        # Horizontal spectrogram: X=time, Y=frequency
         img = np.clip(self._spec_history, 0, 255).astype(np.ubyte)
         self._spec_img.setImage(img, autoLevels=False)
+        self._spec_img.setRect(pg.QtCore.QRectF(ox, oy, w, h))
         
-        self.widget.setXRange(0, 400, padding=0)
-        self.widget.setYRange(0, self._spec_y_res, padding=0)
+        if not is_all:
+            self.widget.setXRange(ox, ox + w, padding=0)
+            self.widget.setYRange(oy, oy + h, padding=0)
 
     def _draw_lissajous(self, d):
         self._hide_all_but('lissajous')
@@ -737,61 +758,61 @@ class Visualizer:
         self.widget.setYRange(-4, 4, padding=0)
 
     def _draw_lissajous_ozone(self, chunk):
-        """Goniometer / Lissajous: Ozone Imager style.
-        L on left (-x), R on right (+x), Mono up (+y).
+        """Goniometer / Lissajous: scatter-dot vectorscope with diamond/kite frame.
+        Sketch theme background. L on left, R on right, Mono up.
         """
         self._hide_all_but('lissajous')
-        self.widget.setBackground('#0d1117')
 
         L = self._stereo_L.astype(np.float32)
         R = self._stereo_R.astype(np.float32)
         n = min(len(L), len(R))
         L, R = L[:n], R[:n]
 
-        # Mid-Side transform (goniometer axes)
+        # Mid-Side transform
         sq2 = np.sqrt(2.0)
-        # R gives +x, L gives -x. Mono (L=R) gives 0.
         x_ms = (R - L) / sq2
         y_ms = (L + R) / sq2
 
-        # Clamp to avoid overflow; scale with sensitivity
         clip = 3.0
         x_ms = np.clip(x_ms * self.p_sens, -clip, clip)
         y_ms = np.clip(y_ms * self.p_sens, -clip, clip)
 
-        # Rolling history for trails (decay-controlled length)
+        # Rolling history for fading dots
         self._liss_hist.append((x_ms.copy(), y_ms.copy()))
-        keep = max(2, min(8, int(self.p_decay * 8)))
+        keep = max(2, min(6, int(self.p_decay * 6)))
         while len(self._liss_hist) > keep:
             self._liss_hist.pop(0)
 
-        for i, trail in enumerate(self._liss_trails):
-            idx = len(self._liss_hist) - 1 - i
-            if idx >= 0:
-                trail.setData(self._liss_hist[idx][0], self._liss_hist[idx][1])
-                trail.setVisible(True)
-            else:
-                trail.setVisible(False)
+        # Current frame: bright scatter
+        self._liss_scatter.setData(x_ms, y_ms)
+        self._liss_scatter.setVisible(True)
 
-        # Diamond frame (rotated square) — Ozone's characteristic frame
+        # Older frames: faded scatter
+        if len(self._liss_hist) > 1:
+            old_x = np.concatenate([h[0] for h in self._liss_hist[:-1]])
+            old_y = np.concatenate([h[1] for h in self._liss_hist[:-1]])
+            self._liss_scatter_fade.setData(old_x, old_y)
+            self._liss_scatter_fade.setVisible(True)
+        else:
+            self._liss_scatter_fade.setVisible(False)
+
+        # Diamond / kite frame
         r = clip
         self._liss_diamond.setData([0, r, 0, -r, 0], [r, 0, -r, 0, r])
         self._liss_diamond.setVisible(True)
-        # Crosshairs
         self._liss_crosshair_h.setData([-r, r], [0, 0])
         self._liss_crosshair_v.setData([0, 0], [-r, r])
         self._liss_crosshair_h.setVisible(True)
         self._liss_crosshair_v.setVisible(True)
 
-        self.widget.setXRange(-r * 1.05, r * 1.05, padding=0)
-        self.widget.setYRange(-r * 1.05, r * 1.05, padding=0)
+        self.widget.setXRange(-r * 1.1, r * 1.1, padding=0)
+        self.widget.setYRange(-r * 1.1, r * 1.1, padding=0)
 
     def _draw_polar_level(self, chunk):
         """Ozone Polar Level: energy distributed around a semicircle.
         Centre-top = mono. Bottom-left = L. Bottom-right = R.
         """
         self._hide_all_but('polar_level')
-        self.widget.setBackground('#0d1117')
 
         L = self._stereo_L.astype(np.float32)
         R = self._stereo_R.astype(np.float32)
@@ -861,6 +882,61 @@ class Visualizer:
         self.widget.setXRange(-span, span, padding=0)
         self.widget.setYRange(-0.3, span, padding=0)
 
+    def _draw_polar_sample(self, chunk):
+        """Polar Sample: each stereo sample plotted as a dot in polar coords.
+        Like the reference Vectorscope 'Polar Sample' tab.
+        """
+        self._hide_all_but('polar_sample')
+
+        L = self._stereo_L.astype(np.float32)
+        R = self._stereo_R.astype(np.float32)
+        n = min(len(L), len(R))
+        L, R = L[:n], R[:n]
+
+        eps = 1e-9
+        mag = np.sqrt(L**2 + R**2) * self.p_sens * 2.5
+        ang = np.arctan2(np.abs(L) + eps, np.abs(R) + eps) * 2.0
+
+        max_r = 3.0
+        mag = np.clip(mag, 0, max_r)
+
+        px = mag * np.cos(ang)
+        py = mag * np.sin(ang)
+
+        # Rolling history for fading
+        self._polar_sample_hist.append((px.copy(), py.copy()))
+        keep = max(2, min(6, int(self.p_decay * 6)))
+        while len(self._polar_sample_hist) > keep:
+            self._polar_sample_hist.pop(0)
+
+        self._polar_sample_scatter.setData(px, py)
+        self._polar_sample_scatter.setVisible(True)
+
+        if len(self._polar_sample_hist) > 1:
+            old_x = np.concatenate([h[0] for h in self._polar_sample_hist[:-1]])
+            old_y = np.concatenate([h[1] for h in self._polar_sample_hist[:-1]])
+            self._polar_sample_fade.setData(old_x, old_y)
+            self._polar_sample_fade.setVisible(True)
+        else:
+            self._polar_sample_fade.setVisible(False)
+
+        # Reference arc + guides
+        t_arc = np.linspace(0, np.pi, 200)
+        self._polar_sample_arc.setData(max_r * np.cos(t_arc), max_r * np.sin(t_arc))
+        self._polar_sample_arc.setVisible(True)
+        self._polar_sample_lr.setData([-max_r, max_r], [0, 0])
+        self._polar_sample_lr.setVisible(True)
+        angles = [np.pi/4, 3*np.pi/4]
+        for i, guide in enumerate(self._polar_sample_guides):
+            gx = [0, max_r * np.cos(angles[i])]
+            gy = [0, max_r * np.sin(angles[i])]
+            guide.setData(gx, gy)
+            guide.setVisible(True)
+
+        span = max_r * 1.15
+        self.widget.setXRange(-span, span, padding=0)
+        self.widget.setYRange(-0.5, span, padding=0)
+
     def _draw_grid(self, chunk, rms):
         self._hide_all_but('grid')
         
@@ -919,61 +995,131 @@ class Visualizer:
 
     def _draw_all(self, d, chunk, rms):
         self._hide_all_but('all')
-        W, H = 4.6, 4.6
+        W, H = 9.2, 4.6  # wide for 4 columns
         self.widget.setXRange(-W, W, padding=0)
         self.widget.setYRange(-H, H, padding=0)
 
-        pad = 0.18   # gap between border and content
-        bpad = 0.08  # border inset from centre lines
+        n_cols = 4
+        col_w = W * 2 / n_cols
+        row_h = H
+        margin = 0.12
 
-        # Quadrant cell half-sizes
-        cw = W - bpad   # half total width  → each cell = W wide
-        ch = H - bpad   # half total height → each cell = H tall
-        # Centre of each quadrant
-        qx = W / 2
-        qy = H / 2
-
-        # Draw sketchbook borders (closed rectangle for each quadrant)
         def _rect(x0, y0, x1, y1):
             return ([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0])
 
-        for i, (qox, qoy) in enumerate([(-qx, qy), (qx, qy), (-qx, -qy), (qx, -qy)]):
-            margin = 0.12
-            rx0, ry0 = qox - (W/2 - margin), qoy - (H/2 - margin)
-            rx1, ry1 = qox + (W/2 - margin), qoy + (H/2 - margin)
+        cx = [-W + col_w * (i + 0.5) for i in range(n_cols)]
+        cy_top, cy_bot = H / 2, -H / 2
+
+        # Top: CIRCLE, EQ, WAVE, SPEC  |  Bottom: LISSAJOUS, POLAR, (SPEC filler), CUSTOM
+        has_custom = self._custom_base is not None
+        # 7 cells: 0-3 top, 4-6 bottom (LISSAJOUS, POLAR, SPEC_MINI, CUSTOM)
+        cells = [(cx[0], cy_top), (cx[1], cy_top), (cx[2], cy_top), (cx[3], cy_top),
+                 (cx[0], cy_bot), (cx[1], cy_bot), (cx[2], cy_bot)]
+
+        label_names = ['CIRCLE', 'EQ', 'WAVE', 'SPEC', 'LISSAJOUS', 'POLAR', 'CUSTOM']
+
+        for i, (ccx, ccy) in enumerate(cells):
+            if i >= len(self._all_borders):
+                break
+            if i == 6 and not has_custom:
+                self._all_borders[i].setVisible(False)
+                if i < len(self._all_labels): self._all_labels[i].setVisible(False)
+                continue
+            rx0, ry0 = ccx - col_w/2 + margin, ccy - row_h/2 + margin
+            rx1, ry1 = ccx + col_w/2 - margin, ccy + row_h/2 - margin
             bx, by = _rect(rx0, ry0, rx1, ry1)
             self._all_borders[i].setData(bx, by)
             self._all_borders[i].setVisible(True)
 
-        # Divider cross-hairs
-        self._all_div_v.setData([0, 0], [-H, H])
+        # Divider lines: 3 vertical + 1 horizontal
+        for idx_v, div in enumerate([self._all_div_v, self._all_div_v2]):
+            vx = -W + col_w * (idx_v + 1)
+            div.setData([vx, vx], [-H, H])
+            div.setVisible(True)
+        if hasattr(self, '_all_div_v3'):
+            self._all_div_v3.setData([-W + col_w * 3, -W + col_w * 3], [-H, H])
+            self._all_div_v3.setVisible(True)
         self._all_div_h.setData([-W, W], [0, 0])
-        self._all_div_v.setVisible(True)
         self._all_div_h.setVisible(True)
 
-        # Labels (top-left corner of each quadrant box)
-        offsets = [
-            (-W + 0.22,  H - 0.38),   # top-left cell  → CIRCLE
-            ( 0.22,      H - 0.38),   # top-right cell → GEOMETRY
-            (-W + 0.22, -0.38),       # bot-left cell  → EQ
-            ( 0.22,     -0.38),       # bot-right cell → WAVE
-        ]
-        for lbl, (lx, ly) in zip(self._all_labels, offsets):
-            lbl.setPos(lx, ly)
-            lbl.setVisible(True)
+        # Labels
+        for i, (ccx, ccy) in enumerate(cells):
+            if i < len(self._all_labels):
+                if i == 6 and not has_custom:
+                    self._all_labels[i].setVisible(False)
+                    continue
+                self._all_labels[i].setText(label_names[i])
+                self._all_labels[i].setPos(ccx - col_w/2 + margin + 0.1, ccy + row_h/2 - margin - 0.15)
+                self._all_labels[i].setVisible(True)
 
-        # Content — clamp sub-vis to stay inside quadrant boundaries
-        # Max radius for circle/geometry limited to just under cell half-size
-        sc = 0.72
-        cell_half = qy - 0.3   # leave 0.3 margin inside border
-        self._draw_circle(d, rms,   ox=-qx, oy=qy,  scale=sc * 0.55, is_all=True)
-        self._draw_geometry(d, rms, ox=qx,  oy=qy,  scale=sc * 0.55, is_all=True)
+        # ── Top row sub-visualizations ──
+        sc = 0.55
+        self._draw_circle(d, rms, ox=cx[0], oy=cy_top, scale=sc * 0.42, is_all=True)
 
-        # EQ and Wave: clamp amplitude to cell_half relative to quadrant centre
-        eq_scale = min(qx * 0.82, cell_half * 0.90)
-        wv_scale = min(qx * 0.82, cell_half * 0.90)
-        self._draw_eq(chunk,    ox=-qx, oy=-qy, scale=eq_scale, is_all=True)
-        self._draw_wave(d, rms, ox=qx,  oy=-qy, scale=wv_scale, is_all=True)
+        eq_sc = col_w * 0.33
+        self._draw_eq(chunk, ox=cx[1], oy=cy_top - row_h * 0.15, scale=eq_sc, is_all=True)
+        wv_sc = col_w * 0.33
+        self._draw_wave(d, rms, ox=cx[2], oy=cy_top, scale=wv_sc, is_all=True)
+
+        # Mini spectrogram (top-right cell)
+        bars_mini, _ = self._get_fft(chunk, 64)
+        bars_mini = np.clip(bars_mini * self.p_sens * 1.5, 0, 255)
+        self._all_spec_history = np.roll(self._all_spec_history, -1, axis=0)
+        self._all_spec_history[-1] = bars_mini
+        spec_img = np.clip(self._all_spec_history, 0, 255).astype(np.ubyte)
+        self._all_spec_img.setImage(spec_img, autoLevels=False)
+        spec_x0 = cx[3] - col_w/2 + margin + 0.05
+        spec_y0 = cy_top - row_h/2 + margin + 0.25
+        spec_w = col_w - 2*margin - 0.1
+        spec_h = row_h - 2*margin - 0.4
+        self._all_spec_img.setRect(pg.QtCore.QRectF(spec_x0, spec_y0, spec_w, spec_h))
+        self._all_spec_img.setVisible(True)
+
+        # ── Bottom row sub-visualizations ──
+        L = self._stereo_L.astype(np.float32) if self._stereo_L is not None else d.copy()
+        R = self._stereo_R.astype(np.float32) if self._stereo_R is not None else np.roll(d, len(d)//4)
+        n = min(len(L), len(R))
+        L_s, R_s = L[:n], R[:n]
+
+        # Mini Lissajous scatter (bottom-left)
+        sq2 = np.sqrt(2.0)
+        lx = (R_s - L_s) / sq2
+        ly = (L_s + R_s) / sq2
+        liss_sc = min(col_w, row_h) * 0.35
+        lx = np.clip(lx * self.p_sens * liss_sc, -liss_sc, liss_sc) + cx[0]
+        ly = np.clip(ly * self.p_sens * liss_sc, -liss_sc, liss_sc) + cy_bot
+        self._all_liss_scatter.setData(lx, ly)
+        self._all_liss_scatter.setVisible(True)
+
+        # Mini Polar fill (bottom-center)
+        eps = 1e-9
+        mag = np.sqrt(L_s**2 + R_s**2)
+        ang_p = np.arctan2(np.abs(L_s) + eps, np.abs(R_s) + eps) * 2.0
+        n_bins = 64
+        bin_edges = np.linspace(0, np.pi, n_bins + 1)
+        energy = np.zeros(n_bins, dtype=np.float32)
+        bin_idx = np.clip(np.digitize(ang_p, bin_edges) - 1, 0, n_bins - 1)
+        np.maximum.at(energy, bin_idx, mag)
+        kernel = np.ones(3) / 3
+        energy = np.convolve(energy, kernel, mode='same')
+        polar_sc = min(col_w, row_h) * 0.33
+        energy = np.clip(energy * 2.0 * self.p_sens, 0, polar_sc)
+        theta = np.linspace(0, np.pi, n_bins)
+        ppx = energy * np.cos(theta) + cx[1]
+        ppy = energy * np.sin(theta) + cy_bot
+        ppx_c = np.concatenate([[cx[1]], ppx, [cx[1]]])
+        ppy_c = np.concatenate([[cy_bot], ppy, [cy_bot]])
+        self._all_polar_fill.setData(ppx_c, ppy_c)
+        self._all_polar_fill.setVisible(True)
+        self._all_polar_outline.setData(ppx, ppy)
+        self._all_polar_outline.setVisible(True)
+        t_arc = np.linspace(0, np.pi, 100)
+        self._all_polar_arc.setData(polar_sc * np.cos(t_arc) + cx[1], polar_sc * np.sin(t_arc) + cy_bot)
+        self._all_polar_arc.setVisible(True)
+
+        # Custom shape (only if available, in bottom-right)
+        if has_custom:
+            self._draw_custom(d, rms, ox=cx[2], oy=cy_bot, scale=sc * 0.35, is_all=True)
 
     def _draw_img_circle(self, d, rms):
         self._hide_all_but('img_circle')
@@ -1004,8 +1150,8 @@ class Visualizer:
 
 
     def _hide_all_but(self, mode_str):
-        dark_modes = ('lissajous', 'polar_level')
-        self.widget.setBackground('#0d1117' if mode_str in dark_modes else '#f4f4f0')
+        # All modes use sketch-paper background
+        self.widget.setBackground('#f4f4f0')
 
         is_all = (mode_str == 'all')
 
@@ -1014,9 +1160,9 @@ class Visualizer:
         self._circle_fill.setVisible(mode_str == 'circle')
         self._circle_chords.setVisible(mode_str == 'circle' or is_all)
         for c in self._circle_trails: c.setVisible(mode_str == 'circle' or is_all)
-        for c in self._polys: c.setVisible(mode_str == 'geometry' or is_all)
-        self._geo_web.setVisible(mode_str == 'geometry' or is_all)
-        for c in self._geo_trails: c.setVisible(mode_str == 'geometry' or is_all)
+        for c in self._polys: c.setVisible(mode_str == 'geometry')
+        self._geo_web.setVisible(mode_str == 'geometry')
+        for c in self._geo_trails: c.setVisible(mode_str == 'geometry')
 
         self._eq_fill.setVisible(mode_str == 'eq')
         self._eq_line.setVisible(mode_str == 'eq' or is_all)
@@ -1026,12 +1172,26 @@ class Visualizer:
         self._custom_curve.setVisible(mode_str == 'custom')
         self._custom_chords.setVisible(mode_str == 'custom')
 
-        # Ozone Lissajous — mode string is 'lissajous' (matches VisMode.LISSAJOUS)
+        # Lissajous scatter + diamond frame
         is_liss = (mode_str == 'lissajous')
-        for t in self._liss_trails: t.setVisible(is_liss)
+        self._liss_scatter.setVisible(is_liss)
+        self._liss_scatter_fade.setVisible(is_liss)
+        self._liss_arc.setVisible(False)
+        self._liss_lr_line.setVisible(False)
+        self._liss_guide1.setVisible(False)
+        self._liss_guide2.setVisible(False)
+        for t in self._liss_trails: t.setVisible(False)
         self._liss_diamond.setVisible(is_liss)
         self._liss_crosshair_h.setVisible(is_liss)
         self._liss_crosshair_v.setVisible(is_liss)
+
+        # Polar Sample scatter
+        is_ps = (mode_str == 'polar_sample')
+        self._polar_sample_scatter.setVisible(is_ps)
+        self._polar_sample_fade.setVisible(is_ps)
+        self._polar_sample_arc.setVisible(is_ps)
+        self._polar_sample_lr.setVisible(is_ps)
+        for g in self._polar_sample_guides: g.setVisible(is_ps)
 
         # Polar Level
         is_polar = (mode_str == 'polar_level')
@@ -1041,13 +1201,20 @@ class Visualizer:
         self._polar_lr_line.setVisible(is_polar)
         for a in self._polar_guide_arcs: a.setVisible(is_polar)
 
-        # ALL mode borders / labels
+        # ALL mode borders / labels / mini items
         for b in self._all_borders: b.setVisible(is_all)
         self._all_div_v.setVisible(is_all)
+        if hasattr(self, '_all_div_v2'): self._all_div_v2.setVisible(is_all)
+        if hasattr(self, '_all_div_v3'): self._all_div_v3.setVisible(is_all)
         self._all_div_h.setVisible(is_all)
         for lbl in self._all_labels: lbl.setVisible(is_all)
+        if hasattr(self, '_all_liss_scatter'): self._all_liss_scatter.setVisible(is_all)
+        if hasattr(self, '_all_polar_fill'): self._all_polar_fill.setVisible(is_all)
+        if hasattr(self, '_all_polar_outline'): self._all_polar_outline.setVisible(is_all)
+        if hasattr(self, '_all_polar_arc'): self._all_polar_arc.setVisible(is_all)
+        if hasattr(self, '_all_spec_img'): self._all_spec_img.setVisible(is_all)
 
-        self._bg_img.setVisible(mode_str not in ('img_circle', *dark_modes))
+        self._bg_img.setVisible(mode_str not in ('img_circle',))
         self._img_circle_item.setVisible(mode_str == 'img_circle')
 
     def _hide_all(self):
